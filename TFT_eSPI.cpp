@@ -24,6 +24,12 @@
       SPIClass& spi = SPI;
     #endif
   #endif
+#elif defined (ARDUINO_ARCH_STM32L0)
+  #ifndef USE_SPI
+    SPIClass& spi = SPI1;
+  #else
+    SPIClass& spi = SPI;
+  #endif  
 #else // ESP8266
   SPIClass& spi = SPI;
 #endif
@@ -52,6 +58,8 @@ void busDir(uint32_t mask, uint8_t mode);
 inline void TFT_eSPI::spi_begin(void){
 #if defined (SPI_HAS_TRANSACTION) && defined (SUPPORT_TRANSACTIONS) && !defined(ESP32_PARALLEL)
   if (locked) {locked = false; spi.beginTransaction(SPISettings(SPI_FREQUENCY, MSBFIRST, TFT_SPI_MODE)); CS_L;}
+#elif defined (ARDUINO_ARCH_STM32L0)
+  spi.beginTransaction(SPISettings(4, MSBFIRST, SPI_MODE0, false)); CS_L;
 #else
   CS_L;
 #endif
@@ -66,6 +74,8 @@ inline void TFT_eSPI::spi_end(void){
   #ifdef ESP8266
     SPI1U = SPI1U_READ;
   #endif
+#elif defined (ARDUINO_ARCH_STM32L0)
+    CS_H; spi.endTransaction();
 #else
   if(!inTransaction) CS_H;
 #endif
@@ -74,6 +84,8 @@ inline void TFT_eSPI::spi_end(void){
 inline void TFT_eSPI::spi_begin_read(void){
 #if defined (SPI_HAS_TRANSACTION) && defined (SUPPORT_TRANSACTIONS) && !defined(ESP32_PARALLEL)
   if (locked) {locked = false; spi.beginTransaction(SPISettings(SPI_READ_FREQUENCY, MSBFIRST, TFT_SPI_MODE)); CS_L;}
+#elif defined (ARDUINO_ARCH_STM32L0)
+  spi.beginTransaction(SPISettings(SPI_READ_FREQUENCY, MSBFIRST, SPI_MODE0, false)); CS_L;
 #else
   #if !defined(ESP32_PARALLEL)
     spi.setFrequency(SPI_READ_FREQUENCY);
@@ -88,11 +100,13 @@ inline void TFT_eSPI::spi_begin_read(void){
 inline void TFT_eSPI::spi_end_read(void){
 #if defined (SPI_HAS_TRANSACTION) && defined (SUPPORT_TRANSACTIONS) && !defined(ESP32_PARALLEL)
   if(!inTransaction) {if (!locked) {locked = true; CS_H; spi.endTransaction();}}
+#elif defined (ARDUINO_ARCH_STM32L0)
+  CS_H; spi.endTransaction();
 #else
   #if !defined(ESP32_PARALLEL)
     spi.setFrequency(SPI_FREQUENCY);
   #endif
-   if(!inTransaction) CS_H;
+  if(!inTransaction) CS_H;
 #endif
 #ifdef ESP8266
   SPI1U = SPI1U_WRITE;
@@ -106,6 +120,8 @@ inline void TFT_eSPI::spi_end_read(void){
 
   #if defined (SPI_HAS_TRANSACTION) && defined (SUPPORT_TRANSACTIONS)
     if (locked) {locked = false; spi.beginTransaction(SPISettings(SPI_TOUCH_FREQUENCY, MSBFIRST, SPI_MODE0));}
+  #elif defined (ARDUINO_ARCH_STM32L0)
+    spi.beginTransaction(SPISettings(SPI_TOUCH_FREQUENCY, MSBFIRST, SPI_MODE0, false));
   #else
     spi.setFrequency(SPI_TOUCH_FREQUENCY);
   #endif
@@ -122,6 +138,8 @@ inline void TFT_eSPI::spi_end_read(void){
 
   #if defined (SPI_HAS_TRANSACTION) && defined (SUPPORT_TRANSACTIONS)
     if(!inTransaction) {if (!locked) {locked = true; spi.endTransaction();}}
+  #elif defined (ARDUINO_ARCH_STM32L0)
+    spi.endTransaction();
   #else
     spi.setFrequency(SPI_FREQUENCY);
   #endif
@@ -285,7 +303,7 @@ void TFT_eSPI::init(uint8_t tc)
 {
   if (_booted)
   {
-#if !defined (ESP32)
+#if defined (ESP8266)
   #if defined (TFT_CS) && (TFT_CS >= 0)
     cspinmask = (uint32_t) digitalPinToBitMask(TFT_CS);
   #endif
@@ -311,7 +329,18 @@ void TFT_eSPI::init(uint8_t tc)
 
   spi.begin(); // This will set HMISO to input
 
-#else
+#elif defined (ARDUINO_ARCH_STM32L0)
+  spi.begin();
+
+  // Set to output once again in case D6 (MISO) is used for CS
+  digitalWrite(TFT_CS, HIGH); // Chip select high (inactive)
+  pinMode(TFT_CS, OUTPUT);
+
+  digitalWrite(TFT_DC, HIGH); // Data/Command high = data mode
+  pinMode(TFT_DC, OUTPUT);
+
+#else //ESP32
+
   #if !defined(ESP32_PARALLEL)
     #if defined (TFT_MOSI) && !defined (TFT_SPI_OVERLAP)
       spi.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, -1);
@@ -2698,7 +2727,7 @@ void TFT_eSPI::setAddrWindow(int32_t x0, int32_t y0, int32_t w, int32_t h)
 #if defined (ESP8266) && !defined (RPI_WRITE_STROBE) && !defined (RPI_ILI9486_DRIVER)
 void TFT_eSPI::setWindow(int32_t xs, int32_t ys, int32_t xe, int32_t ye)
 {
-  //spi_begin(); // Must be called before setWimdow
+  //spi_begin(); // Must be called before setWindow
 
 #ifdef CGRAM_OFFSET
   xs+=colstart;
@@ -2763,7 +2792,7 @@ void TFT_eSPI::setWindow(int32_t xs, int32_t ys, int32_t xe, int32_t ye)
 
 void TFT_eSPI::setWindow(int32_t xs, int32_t ys, int32_t xe, int32_t ye)
 {
-  //spi_begin(); // Must be called before setWimdow
+  //spi_begin(); // Must be called before setWindow
 
   addr_col = 0xFFFF;
   addr_row = 0xFFFF;
@@ -2891,7 +2920,7 @@ void TFT_eSPI::setWindow(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
 
 void TFT_eSPI::setWindow(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
 {
-  //spi_begin(); // Must be called before setWimdow
+  //spi_begin(); // Must be called before setWindow
 
   addr_col = 0xFFFF;
   addr_row = 0xFFFF;
@@ -3011,7 +3040,7 @@ void TFT_eSPI::readAddrWindow(int32_t xs, int32_t ys, int32_t w, int32_t h)
 
 }
 
-#else //ESP32
+#else //ESP32 or STM32L0
 
 void TFT_eSPI::readAddrWindow(int32_t xs, int32_t ys, int32_t w, int32_t h)
 {
@@ -3235,7 +3264,7 @@ void TFT_eSPI::drawPixel(int32_t x, int32_t y, uint32_t color)
   spi_end();
 }
 
-#else // ESP32
+#else // ESP32 or STM32L0
 
 void TFT_eSPI::drawPixel(int32_t x, int32_t y, uint32_t color)
 {
@@ -3397,6 +3426,8 @@ void TFT_eSPI::pushColors(uint8_t *data, uint32_t len)
   #elif  defined (ILI9488_DRIVER)
     uint16_t color;
     while (len>1) {color = (*data++); color |= ((*data++)<<8); tft_Write_16(color); len-=2;}
+  #elif defined (ARDUINO_ARCH_STM32L0)
+    while (len--) {tft_Write_8(*data); data++;}  //TODO
   #else
     #if (SPI_FREQUENCY == 80000000)
       while ( len >=64 ) {spi.writePattern(data, 64, 1); data += 64; len -= 64; }
@@ -3427,6 +3458,11 @@ void TFT_eSPI::pushColors(uint16_t *data, uint32_t len, bool swap)
     if (swap) spi.writePixels(data,len<<1);
     else spi.writeBytes((uint8_t*)data,len<<1);
   #endif
+
+#elif defined (ARDUINO_ARCH_STM32L0)
+    if (swap) while ( len-- ) {tft_Write_16(*data); data++;}
+    else while ( len-- ) {tft_Write_16(*data); data++;}
+
 #else
 
   uint32_t color[8];
@@ -3514,7 +3550,7 @@ void TFT_eSPI::pushColors(uint16_t *data, uint32_t len, bool swap)
 // Bresenham's algorithm - thx wikipedia - speed enhanced by Bodmer to use
 // an efficient FastH/V Line draw routine for line segments of 2 pixels or more
 
-#if defined (RPI_ILI9486_DRIVER) || defined (ESP32) || defined (RPI_WRITE_STROBE) || defined (HX8357D_DRIVER) || defined (ILI9488_DRIVER)
+#if defined (ESP32) || defined (ARDUINO_ARCH_STM32L0) || defined (RPI_WRITE_STROBE) || defined (HX8357D_DRIVER) || (RPI_ILI9486_DRIVER) || defined (ILI9488_DRIVER)
 
 void TFT_eSPI::drawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
 {
@@ -3698,7 +3734,7 @@ void TFT_eSPI::drawFastVLine(int32_t x, int32_t y, int32_t h, uint32_t color)
   spi_end();
 }
 
-#else
+#else //ESP32 or STM32L0
 
 void TFT_eSPI::drawFastVLine(int32_t x, int32_t y, int32_t h, uint32_t color)
 {
@@ -3729,7 +3765,7 @@ void TFT_eSPI::drawFastVLine(int32_t x, int32_t y, int32_t h, uint32_t color)
   #ifdef ESP32_PARALLEL
     while (h--) {tft_Write_16(color);}
   #else
-    writeBlock(color, h);
+    writeBlock(color, h);  //STM32L0
   #endif
 #endif
 
@@ -3741,7 +3777,7 @@ void TFT_eSPI::drawFastVLine(int32_t x, int32_t y, int32_t h, uint32_t color)
 ** Function name:           drawFastHLine
 ** Description:             draw a horizontal line
 ***************************************************************************************/
-#if defined (ESP8266) && !defined (RPI_WRITE_STROBE)
+#if defined (ESP8266) || defined (ARDUINO_ARCH_STM32L0) && !defined (RPI_WRITE_STROBE)
 void TFT_eSPI::drawFastHLine(int32_t x, int32_t y, int32_t w, uint32_t color)
 {
   // Clipping
@@ -3805,7 +3841,7 @@ void TFT_eSPI::drawFastHLine(int32_t x, int32_t y, int32_t w, uint32_t color)
 ** Function name:           fillRect
 ** Description:             draw a filled rectangle
 ***************************************************************************************/
-#if defined (ESP8266) && !defined (RPI_WRITE_STROBE)
+#if defined (ESP8266) && !defined (RPI_WRITE_STROBE) || defined (ARDUINO_ARCH_STM32L0)
 void TFT_eSPI::fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color)
 {
   // Clipping
@@ -3818,13 +3854,13 @@ void TFT_eSPI::fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t col
   if ((y + h) > _height) h = _height - y;
 
   if ((w < 1) || (h < 1)) return;
-
+  
   spi_begin();
 
   setWindow(x, y, x + w - 1, y + h - 1);
 
   writeBlock(color, w * h);
-  
+
   spi_end();
 }
 
@@ -5087,6 +5123,8 @@ void writeBlock(uint16_t color, uint32_t repeat)
   }
 
 }
+
+
 #else // Now the code for ESP32 and ILI9488
 
 void writeBlock(uint16_t color, uint32_t repeat)
@@ -5100,7 +5138,7 @@ void writeBlock(uint16_t color, uint32_t repeat)
   uint32_t r1 = r0>>8 | g<<16;
   uint32_t r2 = r1>>8 | b<<8;
 
-  if (repeat > 19)
+  if (repeat > 19)  
   {
     SET_PERI_REG_BITS(SPI_MOSI_DLEN_REG(SPI_PORT), SPI_USR_MOSI_DBITLEN, 479, SPI_USR_MOSI_DBITLEN_S);
 
@@ -5156,6 +5194,13 @@ void writeBlock(uint16_t color, uint32_t repeat)
 
 }
 #endif
+
+#elif defined (ARDUINO_ARCH_STM32L0) // Low level register based ESP32 code for 16 bit colour SPI TFTs
+
+void writeBlock(uint16_t color, uint32_t repeat)
+{
+  do { tft_Write_16(color); } while (--repeat > 0);
+}
 
 #else // Low level register based ESP32 code for 16 bit colour SPI TFTs
 

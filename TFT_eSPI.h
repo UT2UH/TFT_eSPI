@@ -27,6 +27,17 @@
   #define TAB_COLOUR 0
 #endif
 
+#ifndef ARDUINO_ARCH_STM32L0
+  #include <pgmspace.h>
+  #define _FORCE_PROGMEM__
+#endif
+
+#if defined(ST7789_DRIVER) || defined(ST7789_2_DRIVER)
+  #define TFT_SPI_MODE SPI_MODE3
+#else
+  #define TFT_SPI_MODE SPI_MODE0
+#endif
+
 // If the frequency is not defined, set a default
 #ifndef SPI_FREQUENCY
   #define SPI_FREQUENCY  20000000
@@ -37,11 +48,6 @@
   #define SPI_READ_FREQUENCY SPI_FREQUENCY
 #endif
 
-#if defined(ST7789_DRIVER) || defined(ST7789_2_DRIVER)
-  #define TFT_SPI_MODE SPI_MODE3
-#else
-  #define TFT_SPI_MODE SPI_MODE0
-#endif
 
 // If the frequency is not defined, set a default
 #ifndef SPI_TOUCH_FREQUENCY
@@ -55,6 +61,7 @@
     #define LOAD_GLCD
   #endif
 #endif
+
 
 // Only load the fonts defined in User_Setup.h (to save space)
 // Set flag so RLE rendering code is optionally compiled
@@ -100,9 +107,6 @@
 
 #include <Arduino.h>
 #include <Print.h>
-
-#include <pgmspace.h>
-
 #include <SPI.h>
 
 #ifdef ESP32
@@ -113,6 +117,15 @@
     #define SPI_PORT VSPI
   #endif
 #endif
+
+#if defined (ARDUINO_ARCH_STM32L0)
+  #ifndef USE_SPI
+    #define SPI_PORT SPI1
+  #else
+    #define SPI_PORT SPI
+  #endif
+#endif
+
 
 #ifdef SMOOTH_FONT
   // Call up the SPIFFS FLASH filing system for the anti-aliased fonts
@@ -129,6 +142,9 @@
   #define DC_D // No macro allocated so it generates no code
 #else
   #if defined (ESP8266) && (TFT_DC == 16)
+    #define DC_C digitalWrite(TFT_DC, LOW)
+    #define DC_D digitalWrite(TFT_DC, HIGH)
+  #elif defined (ARDUINO_ARCH_STM32L0)
     #define DC_C digitalWrite(TFT_DC, LOW)
     #define DC_D digitalWrite(TFT_DC, HIGH)
   #elif defined (ESP32)
@@ -188,6 +204,9 @@
   #if defined (ESP8266) && (TFT_CS == 16)
     #define CS_L digitalWrite(TFT_CS, LOW)
     #define CS_H digitalWrite(TFT_CS, HIGH)
+  #elif defined (ARDUINO_ARCH_STM32L0)
+    #define CS_L digitalWrite(TFT_CS, LOW)
+    #define CS_H digitalWrite(TFT_CS, HIGH)  
   #elif defined (ESP32)
     #if defined (ESP32_PARALLEL)
       #define CS_L // The TFT CS is set permanently low during init()
@@ -240,7 +259,7 @@
   #else
     #define CS_L_DC_C CS_L; DC_C
   #endif
-#else // ESP8266
+#else // ESP8266 || STM32L0
   #define CS_L_DC_C CS_L; DC_C
 #endif
 
@@ -258,13 +277,16 @@
   #if defined (ESP32)
     #define WR_L GPIO.out_w1tc = (1 << TFT_WR)
     #define WR_H GPIO.out_w1ts = (1 << TFT_WR)
+  #elif defined (ARDUINO_ARCH_STM32L0)
+    #define WR_L digitalWrite(TFT_WR, LOW)
+    #define WR_H digitalWrite(TFT_WR, HIGH)    
   #else
     #define WR_L GPOC=wrpinmask
     #define WR_H GPOS=wrpinmask
   #endif
 #endif
 
-#ifdef ESP8266
+#if defined (ESP8266) || defined (ARDUINO_ARCH_STM32L0)
   // Concatenate two 16 bit values for the SPI 32 bit register write
   #define SPI_32(H,L) ( (H)<<16 | (L) )
   #define COL_32(H,L) ( (H)<<16 | (L) )
@@ -346,11 +368,17 @@
   #define tft_Write_16S(C) spi.write16(C<<8 | C>>8)
   #define tft_Write_32(C)  spi.write32(C)
 
-#elif defined ESP8266
+#elif defined (ESP8266)
 
   #define tft_Write_8(C)   spi.write(C)
   #define tft_Write_16(C)  spi.write16(C)
   #define tft_Write_32(C)  spi.write32(C)
+
+#elif defined (ARDUINO_ARCH_STM32L0)
+
+  #define tft_Write_8(C)   SPI_PORT.transfer(C)
+  #define tft_Write_16(C)  SPI_PORT.transfer16(C)
+  #define tft_Write_32(C)  SPI_PORT.transfer32(C)
 
 #else // ESP32 using SPI with 16 bit color display
 
@@ -395,6 +423,8 @@
     // Use a bit banged function call for ESP8266 and bi-directional SDA pin
     #define SCLK_L GPOC=sclkpinmask
     #define SCLK_H GPOS=sclkpinmask
+  #elif defined (ARDUINO_ARCH_STM32L0) && defined (TFT_SDA_READ)
+    #define tft_Read_8() SPI_PORT.transfer(0)
   #else
     // Use a SPI read transfer
     #define tft_Read_8() spi.transfer(0)
@@ -554,7 +584,15 @@ uint8_t overlap;
     uint8_t  port = VSPI;
   #endif
 #endif
-
+/*
+#if defined (ARDUINO_ARCH_STM32L0)
+  #ifndef USE_SPI
+    uint8_t  port = SPI1;
+  #else
+    uint8_t  port = SPI;
+  #endif
+#endif
+*/
 uint16_t tft_driver; // Hexadecimal code
 uint16_t tft_width;  // Rotation 0 width and height
 uint16_t tft_height;
